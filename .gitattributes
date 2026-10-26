@@ -10,3 +10,6 @@
 *.java text eol=lf
 *.dart text eol=lf
 Dockerfile text eol=lf
+# 无扩展名的包装脚本：*.sh 规则不覆盖，Linux/macOS 上带 CRLF 会直接 bad interpreter
+mvnw     text eol=lf
+gradlew  text eol=lf

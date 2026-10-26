@@ -1,0 +1,126 @@
+# 家记 CI：后端集成测试 + 客户端分析/测试/Release APK
+#
+# 2026-10-26 从原 Gitea Actions 工作流平移到 GitHub Actions，并补上原来缺的两段回归网：
+#   - 后端 `mvnw verify`（469 条集成测试，依赖真实的 MySQL/Redis，故起 compose 的 mysql+redis）
+#   - 客户端 `flutter test`（663 条）
+# 原工作流只跑 dart analyze + 构建 APK，测试从未被自动执行过。
+#
+# 发布 APK 的闸门保留原语义：打 tag（v*）或手动触发时，仓库变量 API_BASE_URL 必须已配置，
+# 否则当场失败——静默回退模拟器地址 10.0.2.2 的包装到真机只表现为「全部请求失败」，
+# 而构建照样成功、照样上传产物，到用户手上才发现。
+# push / PR 的日常构建允许用该回退值，只为验证能编译能过测试。
+#
+# 配置位置：仓库 Settings → Secrets and variables → Actions → Variables → API_BASE_URL
+# 未配 keystore，产物是 debug 签名，仅自用；正式分发按 docs/部署指南.md §3.3 本地打包。
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: 后端构建与集成测试
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      # 集成测试连的是 src/test/resources/application-local.yml 里写死的宿主偏移端口
+      # （MySQL 13306 / Redis 16379）与开发口令，与 deploy/.env.example 一一对应，
+      # 所以这里照 README「本地开发」那条路径起容器即可，零额外配置。
+      # app / nginx 两个服务属于 full profile，这里不启——测试直连后端进程。
+      - name: 起 MySQL / Redis
+        run: |
+          cp deploy/.env.example deploy/.env
+          docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d mysql redis
+          for _ in $(seq 1 60); do
+            ms=$(docker inspect -f '{{.State.Health.Status}}' homeledger-mysql)
+            rs=$(docker inspect -f '{{.State.Health.Status}}' homeledger-redis)
+            if [ "$ms" = healthy ] && [ "$rs" = healthy ]; then exit 0; fi
+            sleep 5
+          done
+          echo "::error::MySQL/Redis 未在 5 分钟内就绪（mysql=$ms redis=$rs）"
+          docker logs --tail 80 homeledger-mysql
+          exit 1
+
+      - name: mvnw verify
+        working-directory: backend
+        run: ./mvnw -B verify
+
+      - name: 失败时保留测试报告
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: backend/target/surefire-reports/
+          if-no-files-found: ignore
+
+  app:
+    name: 客户端分析、测试与 APK 构建
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+
+      # 版本与本地开发显式对齐，不追 latest：升级 Flutter 本来就该是主动决定并回归。
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.3'
+          cache: true
+
+      - name: 安装依赖
+        working-directory: app
+        run: flutter pub get
+
+      # freezed/json 生成件已入库，理论上可跳过；保留该命令是为了在生成器版本升级后立刻暴露漂移
+      - name: 重新生成 freezed/json（幂等）
+        working-directory: app
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: 静态分析
+        working-directory: app
+        run: dart analyze
+
+      - name: 单元测试与组件测试
+        working-directory: app
+        run: flutter test
+
+      - name: 发布构建必须配置 API_BASE_URL
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+        run: |
+          if [ -z "${{ vars.API_BASE_URL }}" ]; then
+            echo "::error::发布构建缺少 API_BASE_URL：请在 Settings → Secrets and variables → Actions → Variables 配置后重跑"
+            exit 1
+          fi
+
+      - name: 构建 release APK
+        working-directory: app
+        run: |
+          flutter build apk --release \
+            --dart-define=API_BASE_URL=${{ vars.API_BASE_URL || 'http://10.0.2.2:18088' }}
+
+      - name: 上传 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: app/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
