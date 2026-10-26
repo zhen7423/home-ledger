@@ -2,6 +2,9 @@
 deploy/.env
 deploy/prod/.env.prod
 .env
+# 部署指南 §2.2 让用户把 .env.prod 放到服务器仓库根（/opt/homeledger），
+# 只忽略 deploy/prod/ 那一条会漏掉根目录这份——服务器上 git add -A 会把生产口令提交上去。
+.env.prod
 *.env.local
 
 # ---- IDE ----
