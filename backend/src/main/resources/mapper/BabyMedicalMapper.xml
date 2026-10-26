@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.homeledger.mapper.BabyMedicalMapper">
+
+	<!--
+	  覆盖一条就诊记录的可变列。不能用 BaseMapper#updateById：它默认忽略实体里的 null，而除就诊日期外的
+	  每一列都是选填——医院、科室、诊断、用药、费用、备注逐项都要能被清空（§4.4.5 的整份表单覆盖）。
+	  清不掉的症状是「费用删成空但统计里还在」，而用户没有任何补救入口。
+	  baby_id 不在 SET 里：就诊记录归属靠建时定，与里程碑同理。
+	-->
+	<update id="overwrite">
+		UPDATE baby_medical
+		SET visit_date = #{medical.visitDate},
+		    hospital = #{medical.hospital},
+		    department = #{medical.department},
+		    diagnosis = #{medical.diagnosis},
+		    medicine = #{medical.medicine},
+		    cost_amount = #{medical.costAmount},
+		    remark = #{medical.remark}
+		WHERE id = #{medical.id} AND deleted = 0
+	</update>
+
+</mapper>

@@ -1,0 +1,40 @@
+# 宿主机直跑后端的本地配置模板（S10 审查 M3）。
+#
+# main 侧的 application-local.yml 已因携带开发口令被移出版本库（生产 jar 不再带任何口令）。
+# 要在 IDE 里以 local profile 直跑后端，复制本文件为 application-local.yml（已被 .gitignore
+# 忽略）并按本地环境填值；或者不建文件、直接 export 文末的环境变量。
+# 集成测试不吃这个文件：它们用 src/test/resources 下的那份，mvnw verify 零环境变量。
+
+spring:
+  datasource:
+    # 端口对应 deploy/docker-compose.yml 暴露的宿主偏移端口（只起 mysql/redis 时）
+    url: jdbc:mysql://localhost:13306/homeledger?useUnicode=true&characterEncoding=utf8&connectionTimeZone=Asia/Shanghai&forceConnectionTimeZoneToSession=true&allowPublicKeyRetrieval=true&useSSL=false
+    username: homeledger
+    password: <与 deploy/.env 的 MYSQL_PASSWORD 一致>
+  data:
+    redis:
+      port: 16379
+      password: <与 deploy/.env 的 REDIS_PASSWORD 一致>
+
+homeledger:
+  jwt:
+    # Base64，解码后 >= 32 字节（HS256）；启动期会校验，留空起不来
+    secret: <JWT_SECRET>
+  recurring:
+    # 本机不想让周期记账在 00:10 撞进调试，关掉（开关语义见 SchedulingConfig javadoc）
+    enabled: false
+  purge:
+    # 解散 30 天的物理清除任务同理：调试时误开会把测试家庭真删掉
+    enabled: false
+  upload:
+    dir: data/uploads
+    use-nginx-accel: false
+
+# 本地开发打开在线接口文档（application.yml 的默认是 false，生产口径）
+springdoc:
+  api-docs:
+    enabled: true
+
+# 等价的纯环境变量起法（不建本文件时）：
+#   DB_PORT=13306 DB_PASSWORD=... REDIS_PORT=16379 REDIS_PASSWORD=... JWT_SECRET=... \
+#   SPRING_PROFILES_ACTIVE=local ./mvnw spring-boot:run

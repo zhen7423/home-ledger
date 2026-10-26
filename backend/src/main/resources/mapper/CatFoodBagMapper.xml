@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.homeledger.mapper.CatFoodBagMapper">
+
+	<!--
+	  修改一袋猫粮。列名要一个个写出来，不能用 BaseMapper#updateById：它默认忽略实体里的 null
+	  （FieldStrategy.NOT_NULL），而表单是整份覆盖提交的——用户把备注清空，就得真的写成 NULL，
+	  否则清空动作在界面上生效、刷新一下又回来了。
+	  已软删除的行不允许被改回来，所以 WHERE 里手写 deleted = 0（§6.4.2）。
+	  started_date 在 SET 里：改开始日是把这一袋在时间线上挪位置，前后两袋的结束日跟着重新推导（§4.3.2），
+	  所以本语句不需要也不该去动任何一袋的「结束日期」——那一列压根不存在。
+	-->
+	<update id="overwrite">
+		UPDATE cat_food_bag
+		SET brand = #{bag.brand},
+		    pack_grams = #{bag.packGrams},
+		    started_date = #{bag.startedDate},
+		    remark = #{bag.remark}
+		WHERE id = #{bag.id} AND deleted = 0
+	</update>
+
+</mapper>

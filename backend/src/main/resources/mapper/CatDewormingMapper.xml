@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.homeledger.mapper.CatDewormingMapper">
+
+	<!-- 刻意不带 deleted 条件：软删的驱虫记录仍是「这只猫有过记录」的证据 -->
+	<select id="countAnyForCat" resultType="int">
+		SELECT COUNT(*) FROM cat_deworming
+		WHERE family_id = #{familyId} AND cat_id = #{catId}
+	</select>
+
+	<!--
+	  修改一条驱虫记录。列名要一个个写出来，不能用 BaseMapper#updateById：它默认忽略实体里的 null
+	  （FieldStrategy.NOT_NULL），而表单是整份覆盖提交的——用户把规格/剂量或备注清空，就得真的写成 NULL，
+	  否则清空动作在界面上生效、刷新一下又回来了。
+	  已软删除的行不允许被改回来，所以 WHERE 里手写 deleted = 0（§6.4.2）。
+	  next_date 在 SET 里且不带 IFNULL 兜底：它非空是这张表的规则（§4.3.3），由服务层保证「要么用户给、
+	  要么按周期算得出」，这里再写一套 null 分支只会让两个口径各自漂移。
+	-->
+	<update id="overwrite">
+		UPDATE cat_deworming
+		SET cat_id = #{deworming.catId},
+		    type = #{deworming.type},
+		    done_date = #{deworming.doneDate},
+		    medicine = #{deworming.medicine},
+		    dosage = #{deworming.dosage},
+		    next_date = #{deworming.nextDate},
+		    remark = #{deworming.remark}
+		WHERE id = #{deworming.id} AND deleted = 0
+	</update>
+
+</mapper>

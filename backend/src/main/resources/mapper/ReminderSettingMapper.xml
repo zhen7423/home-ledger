@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.homeledger.mapper.ReminderSettingMapper">
+
+	<!--
+	  reminder_setting 在租户白名单里，拦截器不会给它补任何条件，user_id 是这条语句唯一的隔离防线。
+	  不加 user_id 就是把别人的开关读进自己的设置页——而且它不会报错，只会显示成「对方关了自己却开着」。
+	-->
+	<select id="selectByUser" resultType="cn.homeledger.entity.ReminderSetting">
+		SELECT id, user_id, type, enabled, created_at, updated_at
+		FROM reminder_setting
+		WHERE user_id = #{userId}
+	</select>
+
+</mapper>

@@ -1,0 +1,12 @@
+# Windows 开发机 + Linux 服务器的组合必须钉死行尾：checkout 出 CRLF 的 sh/conf
+# 送上服务器，bash 报 bad interpreter、nginx -t 报错，且都发生在「照文档部署」那一刻。
+*.sh   text eol=lf
+*.conf text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.sql  text eol=lf
+*.xml  text eol=lf
+*.md   text eol=lf
+*.java text eol=lf
+*.dart text eol=lf
+Dockerfile text eol=lf

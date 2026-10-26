@@ -1,0 +1,34 @@
+# 仅测试类路径使用（S10 起从 src/main/resources 移入：生产 jar 不再携带任何开发口令，§12 S10）。
+# @ActiveProfiles("local") 的集成测试靠它把 application.yml 的连接占位符指向
+# deploy/docker-compose.yml 暴露的偏移宿主端口，并给出开发口令，做到 mvnw verify 零环境变量。
+# 宿主机直跑后端（SPRING_PROFILES_ACTIVE=local）不再自动生效本文件，须自行 export 环境变量：
+#   DB_PORT=13306 DB_PASSWORD=homeledger_dev_pwd REDIS_PORT=16379 REDIS_PASSWORD=redis_dev_pwd JWT_SECRET=<32B base64>
+
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:13306/homeledger?useUnicode=true&characterEncoding=utf8&connectionTimeZone=Asia/Shanghai&forceConnectionTimeZoneToSession=true&allowPublicKeyRetrieval=true&useSSL=false
+    username: homeledger
+    password: homeledger_dev_pwd
+  data:
+    redis:
+      port: 16379
+      password: redis_dev_pwd
+
+homeledger:
+  jwt:
+    # 测试专用密钥：只给集成测试签发/校验 token 用，与任何部署环境无关，也不是任何真实环境的值。
+    # 生产密钥一律从部署环境的 .env 注入（见 deploy/.env.example），不入库。
+    secret: 9k+loacEtKRLBVUa1T0WPQyjv7X8OdSXN944CE+/KJg=
+  recurring:
+    # 本地与 mvnw verify 都走 local profile，定时生成一律关掉：测试跨过 00:10 时若让它跑起来，
+    # 某些用例会莫名多出几条流水，或者在无登录态的线程上撞出 -1 哨兵 WARN。
+    # 要在本机验证这个任务，临时把它改成 true 起一次服务即可。
+    enabled: false
+  purge:
+    # §4.1.6 的清理任务同理关掉：测试用例自己建的家庭自己删，不让定时任务在 01:30 误扫。
+    # 要验证任务本体时，集成测试直接注入 FamilyPurgeService 调用，不经调度器。
+    enabled: false
+  upload:
+    # 照片落盘目录指向构建目录，`mvnw clean` 即一并清掉，不污染源码树
+    dir: ${java.io.tmpdir}/homeledger-photo-test
+    use-nginx-accel: false

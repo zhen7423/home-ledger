@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.homeledger.mapper.CategoryMapper">
+
+	<!-- 刻意不写 deleted 条件：判定要含已软删除的流水。见 CategoryMapper#countAnyTransaction 的说明 -->
+	<select id="countAnyTransaction" resultType="int">
+		SELECT COUNT(*) FROM `transaction`
+		WHERE family_id = #{familyId} AND (category_id = #{categoryId} OR sub_category_id = #{categoryId})
+	</select>
+
+	<select id="selectUsedColorIndexes" resultType="java.lang.Integer">
+		SELECT color_index FROM category
+		WHERE family_id = #{familyId} AND deleted = 0 AND enabled = 1
+		  AND parent_id IS NULL AND color_index IS NOT NULL
+	</select>
+
+	<update id="cascadeDisable">
+		UPDATE category SET enabled = 0, updated_at = NOW()
+		WHERE family_id = #{familyId} AND parent_id = #{parentId} AND deleted = 0 AND enabled = 1
+	</update>
+
+	<delete id="deletePhysically">
+		DELETE FROM category WHERE family_id = #{familyId} AND id = #{id}
+	</delete>
+
+</mapper>

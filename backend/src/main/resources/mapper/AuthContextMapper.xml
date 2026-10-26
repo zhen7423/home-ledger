@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.homeledger.mapper.AuthContextMapper">
+
+	<!-- LIMIT 1 兜「一人多家庭在籍」的数据异常：selectOne 遇两行会抛 TooManyResultsException，
+	     该用户的所有请求都会 500。ORDER BY fm.id DESC 让最近一次加入的家庭优先（扫描报告 P2-5）。 -->
+	<select id="selectByUserId" resultType="cn.homeledger.common.AuthContext">
+		SELECT u.id AS userId, fm.family_id AS familyId, fm.role AS role
+		FROM `user` u
+		LEFT JOIN family_member fm ON fm.user_id = u.id AND fm.deleted = 0
+		WHERE u.id = #{userId} AND u.deleted = 0
+		ORDER BY fm.id DESC
+		LIMIT 1
+	</select>
+
+</mapper>

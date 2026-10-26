@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.homeledger.mapper.TransactionMapper">
+
+	<!--
+	  列表与月度小计共用这一份筛选条件，两处各写一份迟早会不一样，而数字对不上是极难查的那类 bug。
+	  deleted = 0 必须手写：自定义 SQL 不经过 MyBatis-Plus 的逻辑删除改写（§6.4.2）。
+	-->
+	<sql id="filters">
+		t.family_id = #{familyId} AND t.deleted = 0
+		<if test="q.startDate != null"><![CDATA[ AND t.biz_date >= #{q.startDate} ]]></if>
+		<if test="q.endDate != null"><![CDATA[ AND t.biz_date <= #{q.endDate} ]]></if>
+		<if test="q.type != null and q.type != ''">AND t.type = #{q.type}</if>
+		<if test="q.categoryId != null">AND t.category_id = #{q.categoryId}</if>
+		<if test="q.subCategoryId != null">AND t.sub_category_id = #{q.subCategoryId}</if>
+		<if test="q.accountId != null">AND t.account_id = #{q.accountId}</if>
+		<if test="q.createdBy != null">AND t.created_by = #{q.createdBy}</if>
+		<if test="q.amount != null">AND t.amount = #{q.amount}</if>
+		<if test="q.keyword != null and q.keyword != ''">AND t.remark LIKE CONCAT('%', #{q.keyword}, '%')</if>
+		<!--
+		  来源不是一列，是 rule_id 有没有值：自动生成的流水必然带着生它的那条规则。source 为空时两个条件都不加，
+		  即「不筛」；未知取值在进 SQL 之前就被 TransactionServiceImpl#assertSource 挡成 400，不会静默当成没筛。
+		  小计与列表共用本片段，所以筛「只看自动记账」时月度合计也只算自动记账的那几笔。
+		-->
+		<if test="q.source != null and q.source == 'AUTO'">AND t.rule_id IS NOT NULL</if>
+		<if test="q.source != null and q.source == 'MANUAL'">AND t.rule_id IS NULL</if>
+	</sql>
+
+	<!--
+	  排序键带上 id：同一天里记的多笔流水 biz_date 相同，只按日期排序时 MySQL 不保证稳定顺序，
+	  翻页会出现同一条重复出现、另一条永远看不到。雪花 id 随时间递增，是现成的次级排序键。
+	-->
+	<select id="selectFilteredPage" resultType="cn.homeledger.entity.Transaction">
+		SELECT t.* FROM `transaction` t
+		WHERE <include refid="filters"/>
+		ORDER BY t.biz_date DESC, t.id DESC
+	</select>
+
+	<select id="selectMonthSummaries" resultType="cn.homeledger.vo.MonthSummary">
+		SELECT DATE_FORMAT(t.biz_date, '%Y-%m') AS month,
+		       COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount END), 0) AS income,
+		       COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount END), 0) AS expense,
+		       COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount ELSE -t.amount END), 0) AS balance,
+		       COUNT(*) AS count
+		FROM `transaction` t
+		WHERE <include refid="filters"/>
+		GROUP BY DATE_FORMAT(t.biz_date, '%Y-%m')
+		ORDER BY month DESC
+	</select>
+
+	<!--
+	  编辑一笔流水。列名要一个个写出来，不能用 BaseMapper#updateById：它默认忽略实体里的 null
+	  （FieldStrategy.NOT_NULL），而编辑表单是整份覆盖提交的——用户把小类或备注清空，就得真的写成 NULL，
+	  否则清空动作在界面上生效、刷新一下又回来了。
+	  已软删除的行不允许被改回来，所以 WHERE 里手写 deleted = 0（§6.4.2）。
+	  family_id / created_by / recorder_name_snapshot 不在 SET 里：编辑不改变归属，也不改记录人。
+	-->
+	<update id="overwrite">
+		UPDATE `transaction`
+		SET type = #{t.type},
+		    amount = #{t.amount},
+		    category_id = #{t.categoryId},
+		    category_name_snapshot = #{t.categoryNameSnapshot},
+		    sub_category_id = #{t.subCategoryId},
+		    sub_category_name_snapshot = #{t.subCategoryNameSnapshot},
+		    account_id = #{t.accountId},
+		    account_name_snapshot = #{t.accountNameSnapshot},
+		    biz_date = #{t.bizDate},
+		    remark = #{t.remark}
+		WHERE id = #{t.id} AND deleted = 0
+	</update>
+
+	<!--
+	  预算的三个聚合共用这一段（§4.2.4）。deleted = 0 与 family_id 都得手写：自定义 SQL 不经过
+	  MyBatis-Plus 的逻辑删除改写（§6.4.2），而拦截器虽然还会再注入一次家庭条件，两处都漏不掉才是这里的约定。
+	  SUM 在没有任何行时返回 NULL 而不是 0，所以每个求和都包一层 COALESCE——漏了它会让 BigDecimal 字段是 null，
+	  后面第一次 compareTo 就 NPE，而那发生在用户刚清空预算、一个月还没有流水的时候。
+	-->
+	<sql id="expenseRange">
+		FROM `transaction` t
+		WHERE t.deleted = 0
+		  AND t.family_id = #{familyId}
+		  AND t.type = 'EXPENSE'
+		  AND t.biz_date <![CDATA[ >= ]]> #{from}
+		  AND t.biz_date <![CDATA[ <= ]]> #{to}
+	</sql>
+
+	<select id="sumExpenseInRange" resultType="java.math.BigDecimal">
+		SELECT COALESCE(SUM(t.amount), 0)
+		<include refid="expenseRange"/>
+	</select>
+
+	<select id="sumExpenseByCategory" resultType="cn.homeledger.mapper.TransactionMapper$CategorySpend">
+		SELECT t.category_id AS categoryId, COALESCE(SUM(t.amount), 0) AS amount
+		<include refid="expenseRange"/>
+		GROUP BY t.category_id
+	</select>
+
+	<select id="sumExpenseByCreator" resultType="cn.homeledger.mapper.TransactionMapper$MemberSpend">
+		SELECT t.created_by AS createdBy, COALESCE(SUM(t.amount), 0) AS amount
+		<include refid="expenseRange"/>
+		GROUP BY t.created_by
+	</select>
+
+	<!--
+	  统计的五个聚合共用这一段（§4.2.6）。与 expenseRange 的区别是它走 filters：统计接口接受与流水列表
+	  完全相同的一整套筛选条件（§4.2.6「接口与页面的筛选能力不对等」），复用 filters 才能让「筛出来的统计」
+	  与「筛出来的列表」永远是同一批行。
+	  「只统计支出」不是在 SQL 里写死 type = 'EXPENSE'，而是服务端把派生查询的 type 覆写成 EXPENSE 再进来——
+	  写死在这里会让 filters 里的 <if test="q.type"> 变成一条永远为真的死条件。
+	-->
+	<sql id="filteredFrom">
+		FROM `transaction` t
+		WHERE <include refid="filters"/>
+	</sql>
+
+	<select id="sumFiltered" resultType="cn.homeledger.mapper.TransactionMapper$Totals">
+		SELECT COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount END), 0) AS income,
+		       COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount END), 0) AS expense,
+		       COUNT(*) AS count,
+		       MIN(t.biz_date) AS minBizDate
+		<include refid="filteredFrom"/>
+	</select>
+
+	<!--
+	  首页家庭信息条的「当月已记录天数」（§4.6 第 1 条）。DISTINCT 是这一格的要点：
+	  一天记三笔算一天，否则它就成了另一个笔数。
+	  deleted = 0 必须手写（§6.4.2）。
+	-->
+	<select id="countRecordedDays" resultType="int">
+		SELECT COUNT(DISTINCT t.biz_date)
+		FROM `transaction` t
+		WHERE t.family_id = #{familyId}
+		  AND t.deleted = 0
+		  AND t.biz_date <![CDATA[ >= ]]> #{from}
+		  AND t.biz_date <![CDATA[ <= ]]> #{to}
+	</select>
+
+	<select id="sumExpenseByCategoryAndSubCategoryFiltered"
+	        resultType="cn.homeledger.mapper.TransactionMapper$CategorySubSpend">
+		SELECT t.category_id AS categoryId,
+		       t.sub_category_id AS subCategoryId,
+		       COALESCE(SUM(t.amount), 0) AS amount
+		<include refid="filteredFrom"/>
+		GROUP BY t.category_id, t.sub_category_id
+		ORDER BY t.category_id ASC, amount DESC, t.sub_category_id ASC
+	</select>
+
+	<select id="sumExpenseByAccountFiltered" resultType="cn.homeledger.mapper.TransactionMapper$AccountSpend">
+		SELECT t.account_id AS accountId, COALESCE(SUM(t.amount), 0) AS amount
+		<include refid="filteredFrom"/>
+		GROUP BY t.account_id
+		ORDER BY amount DESC, t.account_id ASC
+	</select>
+
+	<select id="sumExpenseByDayFiltered" resultType="cn.homeledger.mapper.TransactionMapper$DailySpend">
+		SELECT t.biz_date AS bizDate, COALESCE(SUM(t.amount), 0) AS amount
+		<include refid="filteredFrom"/>
+		GROUP BY t.biz_date
+		ORDER BY t.biz_date ASC
+	</select>
+
+	<select id="sumExpenseByMemberCategoryFiltered"
+	        resultType="cn.homeledger.mapper.TransactionMapper$MemberCategorySpend">
+		SELECT t.created_by AS createdBy, t.category_id AS categoryId, COALESCE(SUM(t.amount), 0) AS amount
+		<include refid="filteredFrom"/>
+		GROUP BY t.created_by, t.category_id
+	</select>
+
+	<select id="selectForExport" resultType="cn.homeledger.entity.Transaction">
+		SELECT t.*
+		<include refid="filteredFrom"/>
+		ORDER BY t.biz_date ASC, t.id ASC
+		LIMIT #{offset}, #{limit}
+	</select>
+
+</mapper>

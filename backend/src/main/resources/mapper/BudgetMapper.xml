@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.homeledger.mapper.BudgetMapper">
+
+	<!--
+	  真删除而非逻辑删除，是本表设计的一部分：保存语义是整体替换，旧行若留着会一直占着
+	  uk_budget_bucket，用户第二次保存同一维度就撞键报错。本表没有 deleted 列，故这里也无须写逻辑删除条件。
+	-->
+	<delete id="deleteAllByFamily">
+		DELETE FROM budget WHERE family_id = #{familyId}
+	</delete>
+
+	<delete id="deleteMemberBudgets">
+		DELETE FROM budget
+		WHERE family_id = #{familyId} AND scope = 'MEMBER' AND member_user_id = #{userId}
+	</delete>
+
+</mapper>

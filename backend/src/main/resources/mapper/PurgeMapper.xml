@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.homeledger.mapper.PurgeMapper">
+
+	<!--
+	  §4.1.6 解散家庭 30 天后的物理清除。全部真 DELETE，刻意不写 deleted 条件：
+	  软删行与正常行一样属于这个家庭，物理抹除没有「保留尸骨」的中间态。
+	  租户拦截器会再注入一次 family_id（这些表都不在白名单里），与手写条件等值；
+	  调用方若没切 AuthContextHolder，注入的是 -1 哨兵，删除静默落空——见接口注释。
+	-->
+
+	<select id="collectCatPhotos" resultType="java.lang.String">
+		SELECT photo_url FROM cat
+		WHERE family_id = #{familyId} AND photo_url IS NOT NULL
+	</select>
+
+	<select id="collectBabyPhotos" resultType="java.lang.String">
+		SELECT photo_url FROM baby
+		WHERE family_id = #{familyId} AND photo_url IS NOT NULL
+	</select>
+
+	<!-- recurring_execution_log 外键指 recurring_rule（rule_id），必须先于规则删 -->
+	<delete id="deleteExecutionLogByFamily">
+		DELETE FROM recurring_execution_log WHERE family_id = #{familyId}
+	</delete>
+
+	<delete id="deleteRuleByFamily">
+		DELETE FROM recurring_rule WHERE family_id = #{familyId}
+	</delete>
+
+	<delete id="deleteTransactionByFamily">
+		DELETE FROM `transaction` WHERE family_id = #{familyId}
+	</delete>
+
+	<delete id="deleteBudgetByFamily">
+		DELETE FROM budget WHERE family_id = #{familyId}
+	</delete>
+
+	<delete id="deleteAccountByFamily">
+		DELETE FROM payment_account WHERE family_id = #{familyId}
+	</delete>
+
+	<delete id="deleteCategoryByFamily">
+		DELETE FROM category WHERE family_id = #{familyId}
+	</delete>
+
+	<delete id="deleteCatSettingByFamily">
+		DELETE FROM cat_setting WHERE family_id = #{familyId}
+	</delete>
+
+	<delete id="deleteCatFoodBagByFamily">
+		DELETE FROM cat_food_bag WHERE family_id = #{familyId}
+	</delete>
+
+	<delete id="deleteCatDewormingByFamily">
+		DELETE FROM cat_deworming WHERE family_id = #{familyId}
+	</delete>
+
+	<delete id="deleteCatByFamily">
+		DELETE FROM cat WHERE family_id = #{familyId}
+	</delete>
+
+	<delete id="deleteBabyGrowthByFamily">
+		DELETE FROM baby_growth WHERE family_id = #{familyId}
+	</delete>
+
+	<delete id="deleteBabyPlanByFamily">
+		DELETE FROM baby_vaccine_plan WHERE family_id = #{familyId}
+	</delete>
+
+	<delete id="deleteBabyRecordByFamily">
+		DELETE FROM baby_vaccine_record WHERE family_id = #{familyId}
+	</delete>
+
+	<delete id="deleteBabyMilestoneByFamily">
+		DELETE FROM baby_milestone WHERE family_id = #{familyId}
+	</delete>
+
+	<delete id="deleteBabyMedicalByFamily">
+		DELETE FROM baby_medical WHERE family_id = #{familyId}
+	</delete>
+
+	<delete id="deleteBabyFormulaBagByFamily">
+		DELETE FROM baby_formula_bag WHERE family_id = #{familyId}
+	</delete>
+
+	<delete id="deleteBabyByFamily">
+		DELETE FROM baby WHERE family_id = #{familyId}
+	</delete>
+
+	<delete id="deleteMemberByFamily">
+		DELETE FROM family_member WHERE family_id = #{familyId}
+	</delete>
+
+	<!-- 最后删家庭行本身。前面任何一张表失败，事务整体回滚，家庭行还在，下一轮任务重试 -->
+	<delete id="deleteFamilyRow">
+		DELETE FROM family WHERE id = #{familyId}
+	</delete>
+
+</mapper>

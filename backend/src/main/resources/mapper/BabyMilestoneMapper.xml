@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.homeledger.mapper.BabyMilestoneMapper">
+
+	<!--
+	  覆盖一条里程碑的可变列。不能用 BaseMapper#updateById：它默认忽略实体里的 null，而 description 是选填项，
+	  把它清空是最正常的一次编辑——清不掉的症状是「删了描述但列表里还挂着一句」，刷新也去不掉。
+	  baby_id 不在 SET 里：里程碑归属靠建时定，允许改会让它从一只宝宝的成长轴跳到另一只的。
+	-->
+	<update id="overwrite">
+		UPDATE baby_milestone
+		SET occur_date = #{milestone.occurDate},
+		    title = #{milestone.title},
+		    description = #{milestone.description}
+		WHERE id = #{milestone.id} AND deleted = 0
+	</update>
+
+</mapper>

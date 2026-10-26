@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.homeledger.mapper.BabyVaccineRecordMapper">
+
+	<!--
+	  覆盖一条接种记录的可变列。不能用 BaseMapper#updateById：它默认忽略实体里的 null，
+	  而下面这六列全都要能被清空——
+	  plan_id：改过疫苗名称/剂次后重新匹配不到应种项（补种、异地接种的落点就是「没有对应行」）；
+	  clinic / batch_no / reaction / remark：用户删掉不再需要的补充信息；
+	  next_date：该疫苗在本宝宝清单里没有未完成剂次时它就是空，NULL 有含义（§4.4.4）。
+	  清不掉的症状是「界面上删了、刷新又回来」，与整份表单覆盖的约定直接冲突。
+	  given_date / vaccine_name / dose_no 一并写出：改错疫苗或改错日期要能直接改，
+	  而不是删了重建——重建会丢掉这条记录的 id，应种项的反向指针也就断了。
+	-->
+	<update id="overwrite">
+		UPDATE baby_vaccine_record
+		SET plan_id = #{record.planId},
+		    vaccine_name = #{record.vaccineName},
+		    dose_no = #{record.doseNo},
+		    given_date = #{record.givenDate},
+		    clinic = #{record.clinic},
+		    batch_no = #{record.batchNo},
+		    reaction = #{record.reaction},
+		    next_date = #{record.nextDate},
+		    remark = #{record.remark}
+		WHERE id = #{record.id} AND deleted = 0
+	</update>
+
+</mapper>

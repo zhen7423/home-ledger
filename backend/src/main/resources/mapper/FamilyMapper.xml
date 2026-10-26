@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.homeledger.mapper.FamilyMapper">
+
+	<!--
+	  按邀请码取最晚过期的一个家庭（§4.1.4）。第 33 轮起邀请入口是手动开关：
+	  关掉的家庭码已清空，这里限定 invite_enabled = 1，只认「还开着」的入口。
+	-->
+	<select id="findLatestByInviteCode" resultType="cn.homeledger.entity.Family">
+		SELECT * FROM family
+		WHERE invite_code = #{inviteCode} AND invite_enabled = 1 AND deleted = 0
+		ORDER BY invite_code_expire_at DESC
+		LIMIT 1
+	</select>
+
+	<select id="countUnexpiredByInviteCode" resultType="java.lang.Long">
+		SELECT COUNT(*) FROM family
+		WHERE invite_code = #{inviteCode} AND deleted = 0 AND invite_code_expire_at > NOW()
+	</select>
+
+	<!--
+	  一次性消费邀请码（第 33 轮）。条件 UPDATE 是单次使用的唯一防并发手段：
+	  WHERE 里带 invite_code 与 invite_enabled = 1，两个请求同时拿同一个码 join，
+	  行锁使第二个请求的 UPDATE 匹配 0 行，从而只放一个人进来。
+	-->
+	<update id="consumeInvite">
+		UPDATE family
+		SET invite_enabled = 0, invite_code = NULL, invite_code_expire_at = NULL
+		WHERE id = #{id} AND invite_code = #{inviteCode} AND invite_enabled = 1 AND deleted = 0
+	</update>
+
+	<!--
+	  关闭邀请入口（第 33 轮）。清空邀请码与失效时间，让开关重新归零；
+	  WHERE 带 deleted = 0，家庭解散后调用不会把已逻辑删除的行再改一遍。
+	-->
+	<update id="disableInvite">
+		UPDATE family
+		SET invite_enabled = 0, invite_code = NULL, invite_code_expire_at = NULL
+		WHERE id = #{id} AND deleted = 0
+	</update>
+
+	<!--
+	  解散（§4.1.6）：逻辑删除 + 记下解散时刻。deleted_at 是 30 天物理删除的起点；
+	  deleted = 0 手写，防止对已解散的家庭重复盖章。
+	-->
+	<update id="markDissolved">
+		UPDATE family
+		SET deleted = 1, deleted_at = NOW()
+		WHERE id = #{id} AND deleted = 0
+	</update>
+
+	<!--
+	  物理清除任务的扫描（§4.1.6 S10 部分）。family 在租户白名单内，无注入条件，是跨家庭全局扫描；
+	  deleted_at IS NOT NULL 只防一手「写入也没盖到的极端行」：建库脚本 V1__schema.sql 起
+	  family 就带 deleted_at，第一版无存量行，正常数据不会从这个条件漏掉（S10 审查 M2）。
+	  按 deleted_at 升序：最老的优先走，语义贴着 30 天承诺；若按 id 排，队首一个持续失败的家庭
+	  会把后面健康的永久挡在外面（批次永远被它占着，S10 审查 N6）。
+	  每次限 50 个家庭：任务按批次推进，单个家庭的清理是独立事务，一次全扫完只会把慢查询堆积起来。
+	-->
+	<select id="selectDissolvedBefore" resultType="java.lang.Long">
+		SELECT id FROM family
+		WHERE deleted = 1 AND deleted_at IS NOT NULL AND deleted_at <![CDATA[ <= ]]> #{cutoff}
+		ORDER BY deleted_at
+		LIMIT 50
+	</select>
+
+</mapper>

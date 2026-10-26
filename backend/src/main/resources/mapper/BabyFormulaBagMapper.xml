@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.homeledger.mapper.BabyFormulaBagMapper">
+
+	<!--
+	  修改一罐奶粉，列名逐个写出来，不能用 BaseMapper#updateById（FieldStrategy.NOT_NULL 会吞掉 null）：
+	  表单是整份覆盖提交的——用户把预估日均删掉、备注清空、开罐时刻清掉，就得真的写成 NULL，否则动作在
+	  界面上生效、刷新一下又回来了。已软删除的行不允许被改回来，WHERE 里手写 deleted = 0（§6.4.2）。
+	  started_date 在 SET 里：改开罐日是把这一罐在时间线上挪位置，前后两罐的结束日跟着重新推导（§4.5.3），
+	  本语句不需要也不该去动任何一罐的「结束日期」——那一列压根不存在。
+	  started_time 同样整份覆盖（V20261026130000）：漏写这一列的话「改时刻/清时刻」静默失效，
+	  且 update 的出参是按库重读的，客户端拿到的还是旧时刻（复扫 2026-10-26 P1）。
+	-->
+	<update id="overwrite">
+		UPDATE baby_formula_bag
+		SET brand = #{bag.brand},
+		    pack_grams = #{bag.packGrams},
+		    started_date = #{bag.startedDate},
+		    started_time = #{bag.startedTime},
+		    estimated_daily_grams = #{bag.estimatedDailyGrams},
+		    remark = #{bag.remark}
+		WHERE id = #{bag.id} AND deleted = 0
+	</update>
+
+</mapper>

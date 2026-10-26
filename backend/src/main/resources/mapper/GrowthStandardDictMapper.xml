@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.homeledger.mapper.GrowthStandardDictMapper">
+
+	<!--
+	  该性别该指标的标准表全量行，按横轴升序——插值要找的是相邻两行，排序在这里定死，
+	  不留给调用方，否则每个用到标准表的地方都要自己记得排一次。
+	  没有 deleted = 0：这张表没有 deleted 列（§4.3⑤ 静态字典不带四个通用列），照抄别的 XML
+	  顺手带上它会直接 SQL 报错。
+	-->
+	<select id="selectByGenderAndMetric" resultType="cn.homeledger.entity.GrowthStandardDict">
+		SELECT id, standard_source, source_version, gender, metric, x_value, p3, p10, p25, p50, p75, p90, p97
+		FROM growth_standard_dict
+		WHERE gender = #{gender} AND metric = #{metric}
+		ORDER BY x_value
+	</select>
+
+</mapper>

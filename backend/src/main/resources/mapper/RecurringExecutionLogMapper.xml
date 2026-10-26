@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.homeledger.mapper.RecurringExecutionLogMapper">
+
+	<!--
+	  本表没有 deleted 列，所以这里不写逻辑删除条件——它记的是「哪天为哪条规则生成过一笔」，
+	  是审计轨迹，删掉就等于把幂等依据一起删了。
+	  不写 family_id：rule_id 已经限定了家庭，见 RecurringExecutionLogMapper#countByRuleAndDate。
+	-->
+	<select id="countByRuleAndDate" resultType="int">
+		SELECT COUNT(*) FROM recurring_execution_log
+		WHERE rule_id = #{ruleId} AND biz_date = #{bizDate}
+	</select>
+
+	<select id="selectByRule" resultType="cn.homeledger.entity.RecurringExecutionLog">
+		SELECT id, family_id, rule_id, biz_date, transaction_id, created_at
+		FROM recurring_execution_log
+		WHERE family_id = #{familyId} AND rule_id = #{ruleId}
+		ORDER BY biz_date DESC
+	</select>
+
+	<select id="countByFamilyAndDate" resultType="int">
+		SELECT COUNT(*) FROM recurring_execution_log
+		WHERE family_id = #{familyId} AND biz_date = #{bizDate}
+	</select>
+
+</mapper>

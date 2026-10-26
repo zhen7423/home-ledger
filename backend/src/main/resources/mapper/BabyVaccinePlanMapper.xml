@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.homeledger.mapper.BabyVaccinePlanMapper">
+
+	<!--
+	  某个宝宝的应种清单，按生效日期（用户改过计划日期取 planned_date，否则 due_date）升序、同日按 id
+	  升序——「下一针」与完成率都依赖这个顺序。COALESCE 与实体侧 effectiveDate() 是同一口径，
+	  改动要两处同步。
+	  family_id 手写也带上：自定义 SQL 虽经拦截器改写，但显式写出来能让「重算时的对齐范围」与
+	  「列表读的范围」在代码里就是同一个条件，不依赖读代码的人知道拦截器的存在。
+	-->
+	<select id="listByBaby" resultType="cn.homeledger.entity.BabyVaccinePlan">
+		SELECT id, family_id, baby_id, vaccine_name, dose_no, due_date, planned_date, status, skip_reason,
+		       record_id, manual, created_by, deleted
+		FROM baby_vaccine_plan
+		WHERE family_id = #{familyId} AND baby_id = #{babyId} AND deleted = 0
+		ORDER BY COALESCE(planned_date, due_date), id
+	</select>
+
+	<!--
+	  覆盖一行的可变列。不能用 BaseMapper#updateById：它默认忽略实体里的 null，而撤销跳过必须能把
+	  skip_reason 真的清成 NULL、删接种记录必须能把 record_id 真的清成 NULL、清除计划日期必须能把
+	  planned_date 真的清成 NULL——清不掉的症状是「撤销了但列表上还挂着上次的跳过原因」，刷新也去不掉。
+	  due_date / status / manual 非空，不带 IFNULL 兜底：它们各自只有一个写入方（重算 / 状态机），
+	  这里再写一套 null 分支只会让两个口径各自漂移。
+	  vaccine_name / dose_no 不在 SET 里：它们是与内置程序表对齐的键，允许改会让改生日重算按名称对不上行。
+	-->
+	<update id="overwrite">
+		UPDATE baby_vaccine_plan
+		SET due_date = #{plan.dueDate},
+		    planned_date = #{plan.plannedDate},
+		    status = #{plan.status},
+		    skip_reason = #{plan.skipReason},
+		    record_id = #{plan.recordId},
+		    manual = #{plan.manual}
+		WHERE id = #{plan.id} AND deleted = 0
+	</update>
+
+</mapper>

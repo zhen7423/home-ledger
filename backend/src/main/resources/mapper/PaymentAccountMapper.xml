@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.homeledger.mapper.PaymentAccountMapper">
+
+	<!-- 与 CategoryMapper 的同名语句一样不含 deleted 条件 -->
+	<select id="countAnyTransaction" resultType="int">
+		SELECT COUNT(*) FROM `transaction`
+		WHERE family_id = #{familyId} AND account_id = #{accountId}
+	</select>
+
+	<update id="clearDefault">
+		UPDATE payment_account SET is_default = 0, updated_at = NOW()
+		WHERE family_id = #{familyId} AND is_default = 1 AND deleted = 0
+	</update>
+
+	<delete id="deletePhysically">
+		DELETE FROM payment_account WHERE family_id = #{familyId} AND id = #{id}
+	</delete>
+
+</mapper>

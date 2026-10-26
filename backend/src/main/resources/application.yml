@@ -1,0 +1,125 @@
+spring:
+  application:
+    name: homeledger
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:homeledger}?useUnicode=true&characterEncoding=utf8&connectionTimeZone=Asia/Shanghai&forceConnectionTimeZoneToSession=true&allowPublicKeyRetrieval=true&useSSL=false
+    username: ${DB_USERNAME:homeledger}
+    password: ${DB_PASSWORD:homeledger}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      # Hikari 的 connectionTimeout 是 long 毫秒值，不接受 "10s" 这类 Duration 写法
+      connection-timeout: 10000
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 5s
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  servlet:
+    multipart:
+      # §4.3.1 档案照片 ≤ 5 MB（客户端 image_picker 压缩后通常不到 1 MB）。10m 与 nginx 的
+      # client_max_body_size（deploy/nginx.conf）保持一致：中间任何一跳先掐都会让上传表现为
+      # 413/500 而不是一句人话，两头都要留出同样的余量。
+      # 本值必须 ≥ homeledger.upload.max-bytes，否则业务侧的人话拒绝永远轮不到说话
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      # 默认 never：探活只需要 200/非 200，匿名可见 db/redis 组件细节是给攻击者送侦察信息
+      # （扫描报告 P1-5）。开发要排查时 export HEALTH_SHOW_DETAILS=always。
+      show-details: ${HEALTH_SHOW_DETAILS:never}
+
+mybatis-plus:
+  # §6.4.2：自定义 SQL 外置于 XML。此值本是 MyBatis-Plus 的默认值，显式声明以防升级时默认值变动
+  mapper-locations: classpath*:/mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+    # record 投影（AuthContext / MemberResponse）靠组件名绑定而非列顺序，SELECT 列表重排不会静默错位
+    arg-name-based-constructor-auto-mapping: true
+  global-config:
+    banner: false
+    db-config:
+      id-type: assign_id
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+springdoc:
+  api-docs:
+    path: /api-docs/openapi.json
+    # 默认关闭：完整接口清单（端点/参数/DTO 结构）不该在生产匿名可见（§5.2、扫描报告 P1-5）。
+    # 开发在 local profile 的 application-local.yml 里显式打开。
+    enabled: ${API_DOCS_ENABLED:false}
+  swagger-ui:
+    path: /api-docs
+
+logging:
+  pattern:
+    # 只覆盖 level 段，把 TraceIdFilter 写进 MDC 的 traceId 带进每一行日志（§5.6），
+    # 其余保持 Boot 默认，避免自己重抄一份 console/file 格式。
+    level: "%5p [%X{traceId:-}]"
+
+homeledger:
+  jwt:
+    # §5.2：签名密钥从环境变量注入，不入代码库。Base64 编码，解码后须 >= 32 字节（HS256 最小长度）。
+    # 生产由 deploy/docker-compose.yml 的 environment 注入。开发口令只存在于 src/test/resources 的
+    # application-local.yml（S10：生产 jar 不带任何开发口令），宿主机直跑后端须自行 export JWT_SECRET
+    secret: ${JWT_SECRET:}
+    issuer: homeledger
+    # §4.1.2：Access 2 小时 / Refresh 30 天
+    access-ttl: 2h
+    refresh-ttl: 30d
+  rate-limit:
+    # 邀请码校验 10 次/分钟与密码错误 5 次锁 15 分钟来自需求文档（§4.1.4 / §4.1.2），
+    # 其余 IP 维度阈值文档未给具体数字，取保守默认值，集中在此便于按压测结果调整。
+    login-per-ip-per-minute: 20
+    register-per-ip-per-minute: 5
+    join-family-per-ip-per-minute: 10
+    change-password-per-ip-per-minute: 10
+    password-fail-limit: 5
+    password-lock-window: 15m
+  recurring:
+    # §4.2.3 每日周期记账生成。默认开，生产与 compose 配置都不必为此改动；
+    # 本地与测试在各自的 application-local.yml（main 侧模板见 .example，S10 审查 M3）里关掉，
+    # 免得 00:10 撞上集成测试
+    enabled: ${RECURRING_ENABLED:true}
+  statistics:
+    # §5.1：统计结果缓存 60 秒。命中与未命中必须返回逐字段相同的数据，所以缓存的是 VO 的 JSON
+    cache-ttl: 60s
+  export:
+    # §4.2.7：单次导出上限 5 万行，分批读取每批 2000 行。
+    # 一次把 5 万行拉进内存再加上 xlsx 的写出缓冲会顶穿容器堆，分批是必须的不是优化
+    max-rows: 50000
+    batch-size: 2000
+  upload:
+    # §4.3.1 档案照片。dir: 磁盘目录（compose full 下 app 与 nginx 共享同名卷）；
+    # max-bytes: 单张上限 5 MB，写死在需求里，不用配置项放水；
+    # use-nginx-accel: true 时读取端点回 X-Accel-Redirect 由 Nginx internal 直出（生产），
+    # false 时后端流式返回（本地没有 Nginx，图片也要能看）
+    dir: ${HOMELEDGER_UPLOAD_DIR:data/uploads}
+    max-bytes: ${PHOTO_MAX_BYTES:5242880}
+    use-nginx-accel: ${HOMELEDGER_UPLOAD_USE_NGINX_ACCEL:false}
+  purge:
+    # §4.1.6 解散 30 天后的物理清除。默认开；本地与测试在各自的 application-local.yml
+    # （main 侧模板见 .example，S10 审查 M3）里关掉，
+    # 免得定时任务在测试进程里跨过 01:30 时误删用例数据
+    enabled: ${PURGE_ENABLED:true}

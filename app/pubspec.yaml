@@ -1,0 +1,65 @@
+name: homeledger
+description: "家记：单个家庭共用的生活记录 App 客户端。"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # 中文界面必须挂上，否则输入框长按菜单、日期选择器这些系统组件会显示英文
+  flutter_localizations:
+    sdk: flutter
+
+  flutter_riverpod: ^3.4.3   # 状态管理与依赖注入
+  go_router: ^18.0.1         # 声明式路由，登录态守卫见 lib/router/app_router.dart
+  dio: ^5.11.1               # HTTP，静默续期靠 QueuedInterceptor 串起来
+  flutter_secure_storage: ^11.1.0
+  dynamic_color: ^1.6.0     # Android 12+ 动态取色
+  freezed_annotation: ^3.1.0
+  json_annotation: ^4.12.0
+  path_provider: ^2.1.6      # 定位字典缓存 JSON 的落盘目录
+  intl: ^0.20.3              # 金额的千分位分组（依赖已随 flutter_localizations 解析好，这里提为直接依赖）
+  flutter_local_notifications: ^22.3.0   # 本地通知。只做本地，不接推送（§4.5）
+  timezone: ^0.11.0                      # 定时通知要 TZDateTime，同理得显式声明才准 import
+  fl_chart: ^1.2.0                       # 统计页的饼图/柱状图/折线图，纯 Dart 绘制，不带平台代码
+  share_plus: ^13.3.0                    # 导出文件交给系统分享面板（§4.2.7），不自建文件下载 UI
+  image_picker: ^1.2.3
+  flutter_image_compress: ^2.5.1
+  image_cropper: ^12.2.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+  build_runner: ^2.16.1
+  freezed: ^4.0.1
+  json_serializable: ^6.14.1
+  flutter_launcher_icons: ^0.14.4   # 正式图标生成：dart run flutter_launcher_icons
+
+flutter:
+  uses-material-design: true
+  # 只挂页内真正要用的那张（启动页 / 登录注册的角标）。
+  # assets/ 根目录下的 app_icon*.png 是图标生成脚本的输入，别整个目录挂进来——那几张上兆。
+  assets:
+    - assets/brand/
+
+# 正式 App 图标：猫照片（app/assets/app_icon_source.jpg），不做矢量标记。
+# 三项资产 + Android 各密度资源（含 mipmap-anydpi-v26 自适应图标）已生成并提交，
+# 换图后重新生成：
+#   flutter pub get && dart run flutter_launcher_icons
+# 自适应背景用图片（不是色值）：它中央 2/3 就是裁切区，手机遮罩裁完看到的正是想要的那块构图；
+# 前景是**全透明占位**（background/foreground 成对出现最稳，缺前景有平台解析失败的风险）。
+# 注意：flutter_launcher_icons 把自适应前后景写进 drawable-*/，历史生成脚本写 mipmap-*/，
+# 两者都能用，别两种都跑完就提交，会留下死文件。
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/app_icon.png"
+  adaptive_icon_background: "assets/app_icon_background.png"
+  adaptive_icon_foreground: "assets/app_icon_foreground.png"
+  adaptive_icon_foreground_inset: 0

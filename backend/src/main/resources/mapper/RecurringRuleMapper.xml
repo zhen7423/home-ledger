@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.homeledger.mapper.RecurringRuleMapper">
+
+	<!--
+	  全项目唯一一处声明式绕过租户拦截器的语句：方法上有 @InterceptorIgnore(tenantLine = "true")，
+	  定时任务线程没有「当前家庭」，带了条件就等于什么都扫不出来。列名一个个写出来而不是 SELECT *，
+	  是为了让新增列时必须回来照看一眼——漏在列表里的列读出来是 null，比报错难查。
+	  end_date 不在 WHERE 里：它可能为 NULL，写进 SQL 会变成 (end_date IS NULL OR end_date >= …)，
+	  而这段判断在 Java 里更易读也更好测。deleted = 0 必须手写，自定义 SQL 不经过逻辑删除改写（§6.4.2）。
+	-->
+	<select id="selectAllEnabledRules" resultType="cn.homeledger.entity.RecurringRule">
+		SELECT id, family_id, name, type, amount, category_id, sub_category_id, account_id,
+		       period_type, period_value, start_date, end_date, enabled, last_processed_date,
+		       created_by, created_at, updated_at, deleted
+		FROM recurring_rule
+		WHERE deleted = 0
+		  AND enabled = 1
+		  AND start_date <![CDATA[ <= ]]> #{today}
+		ORDER BY family_id, id
+	</select>
+
+	<update id="advanceProcessedDate">
+		UPDATE recurring_rule
+		SET last_processed_date = #{processedDate}, updated_at = NOW()
+		WHERE id = #{id} AND deleted = 0
+	</update>
+
+	<!--
+	  列名一个个写出来，不能用 BaseMapper#updateById：它默认忽略实体里的 null（FieldStrategy.NOT_NULL），
+	  而编辑表单是整份覆盖提交的——用户把截止日期改成「长期有效」或小类清空，就得真的写成 NULL，
+	  否则清空动作在界面上生效、刷新一下又回来了。写法同 TransactionMapper#overwrite。
+	  updated_at 不在 SET 里，DDL 的 ON UPDATE CURRENT_TIMESTAMP 负责。
+	-->
+	<update id="overwrite">
+		UPDATE recurring_rule
+		SET name = #{r.name},
+		    type = #{r.type},
+		    amount = #{r.amount},
+		    category_id = #{r.categoryId},
+		    sub_category_id = #{r.subCategoryId},
+		    account_id = #{r.accountId},
+		    period_type = #{r.periodType},
+		    period_value = #{r.periodValue},
+		    start_date = #{r.startDate},
+		    end_date = #{r.endDate},
+		    enabled = #{r.enabled},
+		    last_processed_date = #{r.lastProcessedDate}
+		WHERE id = #{r.id} AND deleted = 0
+	</update>
+
+	<!-- 只暂停、不删除：历史流水上的 rule_id 要能反查回规则。见 RecurringRuleMapper#disableByCreator -->
+	<update id="disableByCreator">
+		UPDATE recurring_rule
+		SET enabled = 0, updated_at = NOW()
+		WHERE family_id = #{familyId} AND created_by = #{userId} AND deleted = 0 AND enabled = 1
+	</update>
+
+	<!--
+	  解散家庭时整批作废（§9 第 13 项）。它生成过的流水不动：那些是这个家真实花出去的钱，
+	  与 family / family_member 一样留在库里进 30 天后的物理清除队列。
+	-->
+	<update id="softDeleteByFamily">
+		UPDATE recurring_rule
+		SET deleted = 1, updated_at = NOW()
+		WHERE family_id = #{familyId} AND deleted = 0
+	</update>
+
+	<!-- 一个 categoryId 同时匹配大类与小类两列，于是停用大类时它下面小类被引用的情况也算进来，不必先捞子级 id -->
+	<select id="countByCategory" resultType="int">
+		SELECT COUNT(*) FROM recurring_rule
+		WHERE family_id = #{familyId} AND deleted = 0
+		  AND (category_id = #{categoryId} OR sub_category_id = #{categoryId})
+	</select>
+
+	<select id="countByAccount" resultType="int">
+		SELECT COUNT(*) FROM recurring_rule
+		WHERE family_id = #{familyId} AND deleted = 0 AND account_id = #{accountId}
+	</select>
+
+</mapper>

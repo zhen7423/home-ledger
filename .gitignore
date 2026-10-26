@@ -1,0 +1,33 @@
+# ---- 部署密钥与本地环境变量（需求 §6.3：.env 不入库）----
+deploy/.env
+deploy/prod/.env.prod
+.env
+*.env.local
+
+# ---- IDE ----
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# ---- 操作系统 ----
+.DS_Store
+Thumbs.db
+
+# ---- 日志与临时产物 ----
+*.log
+logs/
+tmp/
+output/
+.qoder/
+
+# ---- 本地运行产物 ----
+# 宿主机直跑后端的落盘目录（含用户上传的真实照片，绝不能入库）
+backend/data/
+# scripts/backup/backup.sh 的输出目录（全量账单 dump 与照片 tar）
+backups/
+
+# 国标原文 PDF 有版权限制，不随仓库分发（数据已在代码内转录并标注来源）
+docs/*.pdf

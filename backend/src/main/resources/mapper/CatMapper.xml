@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.homeledger.mapper.CatMapper">
+
+	<!--
+	  编辑一份猫档案。列名要一个个写出来，不能用 BaseMapper#updateById：它默认忽略实体里的 null
+	  （FieldStrategy.NOT_NULL），而表单是整份覆盖提交的——用户把生日或备注清空，就得真的写成 NULL，
+	  否则清空动作在界面上生效、刷新一下又回来了。
+	  已软删除的行不允许被改回来，所以 WHERE 里手写 deleted = 0（§6.4.2）。
+	  enabled 不在 SET 里：归档走独立端点，改名字不该顺带让一只猫从记录选择器里消失（§4.3.1）。
+	-->
+	<update id="overwrite">
+		UPDATE cat
+		SET name = #{cat.name},
+		    gender = #{cat.gender},
+		    birthday = #{cat.birthday},
+		    birthday_estimated = #{cat.birthdayEstimated},
+		    breed = #{cat.breed},
+		    weight_kg = #{cat.weightKg},
+		    neutered = #{cat.neutered},
+		    remark = #{cat.remark}
+		WHERE id = #{cat.id} AND deleted = 0
+	</update>
+
+	<!--
+	  只改照片列。photo_url 是独立端点写入的，不走整份表单覆盖；传 null 在这里就必须真的清成 NULL
+	  （与 overwrite 同一个理由，不能用 updateById）。已软删除的行不允许再改。
+	-->
+	<update id="setPhotoUrl">
+		UPDATE cat
+		SET photo_url = #{photoUrl}
+		WHERE id = #{id} AND deleted = 0
+	</update>
+
+</mapper>

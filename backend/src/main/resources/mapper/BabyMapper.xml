@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.homeledger.mapper.BabyMapper">
+
+	<!--
+	  刻意不带 deleted 条件：软删的身高体重 / 接种 / 里程碑 / 就诊记录仍是「这个宝宝有过记录」的证据。
+	  也不算 baby_vaccine_plan：那是派生数据，算进去任何宝宝都删不掉。
+	  四条子查询合成一个标量，因为调用方问的是同一个问题，拆成四个计数只多三次往返。
+	  family_id 手写也带上，理由同 BabyVaccinePlanMapper.listByBaby。
+	-->
+	<select id="countUserRecords" resultType="int">
+		SELECT (SELECT COUNT(*) FROM baby_growth
+		        WHERE family_id = #{familyId} AND baby_id = #{babyId})
+		     + (SELECT COUNT(*) FROM baby_vaccine_record
+		        WHERE family_id = #{familyId} AND baby_id = #{babyId})
+		     + (SELECT COUNT(*) FROM baby_milestone
+		        WHERE family_id = #{familyId} AND baby_id = #{babyId})
+		     + (SELECT COUNT(*) FROM baby_medical
+		        WHERE family_id = #{familyId} AND baby_id = #{babyId})
+	</select>
+
+	<!--
+	  编辑一份宝宝档案。列名要一个个写出来，不能用 BaseMapper#updateById：它默认忽略实体里的 null
+	  （FieldStrategy.NOT_NULL），而表单是整份覆盖提交的——用户把出生身高或备注清空，就得真的写成 NULL，
+	  否则清空动作在界面上生效、刷新一下又回来了。
+	  已软删除的行不允许被改回来，所以 WHERE 里手写 deleted = 0（§6.4.2）。
+	  enabled 不在 SET 里：归档走独立端点，改名字不该顺带让一个宝宝从记录选择器里消失（§4.4.1）。
+	-->
+	<update id="overwrite">
+		UPDATE baby
+		SET name = #{baby.name},
+		    gender = #{baby.gender},
+		    birth_date = #{baby.birthDate},
+		    birth_height = #{baby.birthHeight},
+		    birth_weight = #{baby.birthWeight},
+		    remark = #{baby.remark}
+		WHERE id = #{baby.id} AND deleted = 0
+	</update>
+
+	<!-- 只改照片列（§4.4.1、A6）：photo_url 走独立端点，传 null 真的要清成 NULL。 -->
+	<update id="setPhotoUrl">
+		UPDATE baby
+		SET photo_url = #{photoUrl}
+		WHERE id = #{id} AND deleted = 0
+	</update>
+
+</mapper>
