@@ -1,6 +1,7 @@
 package cn.homeledger.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.math.BigDecimal;
 import java.sql.Date;
@@ -13,6 +14,7 @@ import java.util.Set;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
@@ -211,21 +213,25 @@ class BabyFlowIntegrationTest extends ApiTestBase {
 	}
 
 	@Test
-	@DisplayName("手动行与字典行撞同一个键时各走各的：手动行不动，字典行照旧跟着生日平移")
-	void manualRowOnDictKeyIsNotRescheduled() throws Exception {
+	@DisplayName("手动行与字典行撞同一个键：库级唯一索引直接拒绝，重算照旧平移字典行")
+	void manualRowOnDictKeyRejectedByIndex() throws Exception {
 		Account owner = registerWithFamily(PHONE_A, "张三");
 		long babyId = createBaby(owner.accessToken(), "小满", "MALE", "2026-01-01");
-		// 应种日期刻意早于字典行的 2027-07-01：对齐时这一行会先被取到
-		insertManualPlan(babyId, "麻腮风疫苗", "2", "2026-02-02");
+		// 建档已生成「麻腮风疫苗 第2剂」字典行（18 月龄 → 2027-07-01）。裸 INSERT 同键手动行必须被
+		// uk_plan_family_baby_key_active 拒绝（V20261026120000）：应用层 assertKeyFree 是 check-then-act，
+		// 竞态窗口漏进来的第二行会让接种记录回写目标不确定（§1.4 第 13 条），库级索引是兜底。
+		// 走端点的撞键人话报错由 BabyVaccineIntegrationTest.manualPlanDuplicateKeyRejected 覆盖。
+		assertThatThrownBy(() -> insertManualPlan(babyId, "麻腮风疫苗", "2", "2026-02-02"))
+			.isInstanceOf(DuplicateKeyException.class);
+		assertThat(countByManual(babyId, 1)).as("索引拒绝后不会漏进半行").isZero();
+		assertThat(planRows(babyId)).as("失败的插入不留痕迹，仍是建档生成的 24 条").hasSize(24);
 
 		assertThat(patchJson(BABIES + "/" + babyId, babyBody("小满", "MALE", "2026-03-01"), owner.accessToken())
 			.code()).isEqualTo("OK");
 
-		assertThat(dueDatesOf(babyId, "麻腮风疫苗", "2")).as("用户填的日期留在原处，字典行平移到 18 月龄")
-			.containsExactlyInAnyOrder("2026-02-02", "2027-09-01");
-		assertThat(countByManual(babyId, 1)).as("不为手动行另插一条字典行").isEqualTo(1);
-		assertThat(planRows(babyId)).as("24 条字典行 + 1 条手动行").hasSize(25);
 		assertThat(dueDateOf(babyId, "乙肝疫苗", "1")).as("其余行照旧平移，证明重算确实跑过").isEqualTo("2026-03-01");
+		assertThat(dueDateOf(babyId, "麻腮风疫苗", "2")).as("该键由字典行独占，平移到 18 月龄")
+			.isEqualTo("2027-09-01");
 	}
 
 	@Test
@@ -337,7 +343,11 @@ class BabyFlowIntegrationTest extends ApiTestBase {
 		return dates.get(0);
 	}
 
-	/** 同一个 (疫苗名称, 剂次) 允许有多行——(baby_id, vaccine_name, dose_no) 上没有唯一索引（§7.1）。 */
+	/**
+	 * 同一个 (疫苗名称, 剂次) 的全部未删行。正常数据里唯一索引保证只有一行
+	 * （uk_plan_family_baby_key_active，V20261026120000），返回 List 是为了让撞键的测试
+	 * 能断言「真的只有一行」而不是靠 queryForObject 抛异常来表达。
+	 */
 	private List<String> dueDatesOf(long babyId, String vaccineName, String doseNo) {
 		return this.jdbcTemplate.queryForList("SELECT due_date FROM baby_vaccine_plan"
 				+ " WHERE baby_id = ? AND vaccine_name = ? AND dose_no = ? AND deleted = 0", String.class, babyId,
