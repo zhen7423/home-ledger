@@ -1,5 +1,7 @@
 # 家记（homeledger）
 
+![CI](https://github.com/zhen7423/home-ledger/workflows/CI/badge.svg)
+
 单个家庭自托管的生活记录应用：记账、猫咪、宝宝、提醒。Flutter 客户端 +
 Spring Boot 后端 + Docker Compose，数据完全部署在自己手里，全家共用一个空间。
 
@@ -21,6 +23,7 @@ Spring Boot 后端 + Docker Compose，数据完全部署在自己手里，全家
 | 后端 | Java 25、Spring Boot 4.1、Spring Security、MyBatis-Plus、Flyway |
 | 存储 | MySQL 8.4、Redis（限流 / 统计缓存 / 刷新令牌） |
 | 部署 | Docker Compose、Nginx（照片经 X-Accel-Redirect internal 直出） |
+| CI | GitHub Actions（后端集成测试 + 客户端测试 + release APK 构建） |
 
 ## 快速开始（本地开发）
 
