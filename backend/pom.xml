@@ -146,6 +146,19 @@
 					</excludes>
 				</configuration>
 			</plugin>
+			<!-- 测试 JVM 的默认时区钉成 Asia/Shanghai，与生产一致：compose 里 app 容器 TZ=Asia/Shanghai，
+			     生产 JVM 的默认时区本就是上海。CI runner 是 UTC 时，凡是拿 LocalDate.now()（JVM 时区）
+			     与服务端按 TimeConfig 时钟算出的「今天」相比的用例，都会在 UTC 16:00–24:00 窗口差出一天
+			     （StatisticsIntegrationTest / RecurringRuleIntegrationTest / BudgetReminderIntegrationTest /
+			     ExportIntegrationTest 都有这类断言）。不钉的话这些用例是「按几点跑决定红不红」的 flaky。
+			     业务代码一律注入 Clock（见 TimeConfig），不依赖此项；它只让测试环境与部署环境对齐。 -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<argLine>-Duser.timezone=Asia/Shanghai</argLine>
+				</configuration>
+			</plugin>
 		</plugins>
 	</build>
 

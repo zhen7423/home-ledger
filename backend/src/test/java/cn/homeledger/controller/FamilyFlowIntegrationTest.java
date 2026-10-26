@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
 import cn.homeledger.common.ErrorCode;
+import cn.homeledger.config.TimeConfig;
 import cn.homeledger.support.ApiTestBase;
 import tools.jackson.databind.JsonNode;
 
@@ -215,10 +216,13 @@ class FamilyFlowIntegrationTest extends ApiTestBase {
 		FamilyHandle family = createFamily(a);
 		enableInvite(a);
 
-		// 签发即按 24 小时计，允许几十秒的执行误差
+		// 签发即按 24 小时计，允许几十秒的执行误差。
+		// 「现在」必须按 TimeConfig.ZONE 取而不是 JVM 默认时区：库里这个 DATETIME 是
+		// LocalDateTime.now(clock)（clock 固定 Asia/Shanghai）写进去的上海墙上时钟，
+		// 部署机/CI runner 是 UTC 时，裸 LocalDateTime.now() 会差出 8 小时（CI 实测 1919 分钟）。
 		LocalDateTime expireAt = jdbcTemplate.queryForObject(
 				"SELECT invite_code_expire_at FROM family WHERE id = ?", LocalDateTime.class, family.id());
-		long minutes = Duration.between(LocalDateTime.now(), expireAt).toMinutes();
+		long minutes = Duration.between(LocalDateTime.now(TimeConfig.ZONE), expireAt).toMinutes();
 		assertThat(minutes).as("有效期应为 24 小时，实际 %d 分钟", minutes).isBetween(23 * 60L, 24 * 60L);
 
 		// 过 24 小时后码不可用
